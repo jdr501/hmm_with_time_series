@@ -28,8 +28,15 @@ regimes = 3
 lags = 3
 runs = 1
 
+res_mat = np.array([
+    [1,1,0],
+    [1,1,0],
+    [1,0,1],
+])
+
+
 # estimation of parameters 
-result_dict = em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None)
+result_dict = em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None, restriction_matrix = res_mat )
 file_name =  '/globalhome/jdr501/HPC/estimated_results/results_3_regime_parallel_1.json'
 with open(file_name, 'w') as fp:
     json.dump(result_dict, fp)

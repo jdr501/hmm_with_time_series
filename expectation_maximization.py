@@ -12,7 +12,7 @@ import random
 
 
 
-def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delta_yt,x0):
+def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delta_yt,x0, restriction_matrix):
     regimes = start_prob.shape[0]
     llf = []
     for i in range(100): 
@@ -30,7 +30,7 @@ def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delt
         b_matrix, \
         lam_m, sigmas,\
         wls_params, num_grad, \
-        residuals = optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,x0,  zt, delta_yt,regimes)
+        residuals = optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,x0,  zt, delta_yt,regimes,restriction_matrix)
         
 
         print(f'this is new log likelihood {loglikelihood}')
@@ -63,7 +63,11 @@ def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delt
 
 
 
-def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None):
+def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None, restriction_matrix=None):
+    if restriction_matrix == None:
+        k_vars_ = len(df.columns)
+        restriction_matrix = np.ones([k_vars_,k_vars_])
+
     b, start_prob, \
     transition_prob, \
     delta_yt, zt,\
@@ -78,8 +82,8 @@ def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None):
     else:
         result_dic = {}
         for i in range(runs):
-            sigmas, x0 = initialize_step_2(b,regimes)
-            em_result = em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delta_yt,x0)
+            sigmas, x0 = initialize_step_2(b,regimes, restriction_matrix)
+            em_result = em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delta_yt,x0,restriction_matrix)
             result_dic.update({f'{i}': em_result})
     runs_llf = np.zeros(runs)
 
@@ -101,10 +105,10 @@ def parallel_run(b, residuals, start_prob,
     result_dic = {}
     d = 0
     for _ in range(runs):
-        sigmas = initialize_step_2(b,regimes)
+        sigmas = initialize_step_2(b,regimes,restriction_matrix)
         sigmas_list.append(sigmas)
    
-    partial_em = partial(em_algorithm, residuals, start_prob, transition_prob, beta,  zt, delta_yt)
+    partial_em = partial(em_algorithm, residuals, start_prob, transition_prob, beta,  zt, delta_yt,restriction_matrix)
 
     if __name__ == "em_parallel":
         ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=1))

@@ -45,14 +45,17 @@ def initialize_step_1(df,lags,regimes, exog= None, beta =None):
     return b, start_prob, transition_prob, delta_yt, zt, residuals, beta
 
 
-def initialize_step_2(b,regimes):
+def initialize_step_2(b,regimes, restriction_matrix):
     k_vars= b.shape[0]
     b_rand = np.array([rnd() for _ in range(k_vars*k_vars)])
     b = b + b_rand.reshape(k_vars,k_vars)
-    length_x0 = k_vars*k_vars+(regimes-1)*k_vars
+    length_x0 = np.sum(restriction_matrix)+(regimes-1)*k_vars
     x0 = np.zeros(length_x0).reshape(-1,1)
-    x0[:(k_vars*k_vars),[0]] =  b.T.reshape(-1,1) 
-    x0=x0.ravel()
+    x1=  b.T.reshape(-1,1) 
+    x2= restriction_matrix.T.reshape(-1,1)
+    mask = (x2 != 0)
+    x1 = x1[mask]
+    x0[:len(x1),[0]] = x1 
     lam_m = np.zeros([k_vars,k_vars,regimes-1])
 
     for regime in range(regimes-1):

@@ -8,8 +8,10 @@ import autograd.numpy as np
 
 from comm_functions import sigma_estimate
 
+
+
 def optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,
-                     x0,  zt, delta_yt, regimes):
+                     x0,  zt, delta_yt, regimes, restriction_matrix):
     
     transition_prob, start_prob = estimate_transition_prob(smoothed_prob, joint_smoothed_prob, regimes)
     wls_params = wls_estimate(sigmas, zt, delta_yt, smoothed_prob)
@@ -18,7 +20,7 @@ def optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,
         b_matrix, \
         lam_m, \
         sigmas, \
-            num_grad = numerical_opt_b_lambda(x0, residuals, smoothed_prob)
+            num_grad = numerical_opt_b_lambda(x0, residuals, smoothed_prob, restriction_matrix)
     
     return transition_prob, start_prob, x0, b_matrix, lam_m, sigmas, wls_params, num_grad, residuals
 
@@ -124,7 +126,7 @@ def initial_probabilities(regime_transition):
     return probabilities
 
 
-def sigma_likelihood(x, residuals, smoothed_prob):
+def sigma_likelihood(x, residuals, smoothed_prob, restriction_matrix):
     """
     :param x: must be a column vector of guesses
     :param residuals:
@@ -134,7 +136,7 @@ def sigma_likelihood(x, residuals, smoothed_prob):
 
     k_vars, obs = residuals.shape
     regimes = smoothed_prob.shape[0]
-    b_matrix, lam_m = reconstitute_b_lambda(x, k_vars, regimes)
+    b_matrix, lam_m = reconstitute_b_lambda(x, k_vars, regimes,restriction_matrix)
     weighted_sum_res = np.zeros([k_vars, k_vars, regimes])
     for regime in range(regimes):
         temp_wt_sum = 0
@@ -167,32 +169,42 @@ def sigma_likelihood(x, residuals, smoothed_prob):
     return negative_likelihood  
 
 
-def reconstitute_b_lambda(x, k_vars, regimes):
+def reconstitute_b_lambda(x, k_vars, regimes, restriction_matrix):
     x = x.reshape(-1, 1)
     lam_m = [] 
-    b_matrix = x[:k_vars * k_vars, [0]].reshape(k_vars, k_vars).T
+    b_array = x[:np.sum(restriction_matrix), [0]]
+
+    b_matrix = np.zeros([k_vars, k_vars])
+    index = 0 
+    for j in range(k_vars):
+        for i in range(k_vars):
+            if restriction_matrix[i,j] == 1:
+                b_matrix[i,j] = b_array[index,0]
+                index += 1 
+            else:
+                b_matrix[i,j] = 0 
     identity_mat = np.eye(k_vars)
     for regime in range(regimes - 1):
         if regime == 0:
-            start = k_vars * k_vars
+            start = np.sum(restriction_matrix)
             end = start + k_vars
         else:
             start = end
             end = start + k_vars
         lam_m.append(identity_mat * np.exp(x[start:end, [0]]))
-
+        
     return b_matrix, lam_m
 
 
 
-def fprime(x, residuals, smoothed_prob):
-    func = lambda x : sigma_likelihood(x, residuals, smoothed_prob)
+def fprime(x, residuals, smoothed_prob,restriction_matrix):
+    func = lambda x : sigma_likelihood(x, residuals, smoothed_pro,restriction_matrix)
     g= egrad(func)
     return g(x)
 
 
-def hessian(x,  residuals, smoothed_prob):
-  func = lambda x : sigma_likelihood(x, residuals, smoothed_prob)
+def hessian(x,  residuals, smoothed_prob,restriction_matrix):
+  func = lambda x : sigma_likelihood(x, residuals, smoothed_prob,restriction_matrix)
   H_f = jacobian(egrad(func))
   return H_f(x)
 
@@ -228,12 +240,12 @@ def residuals_estimate(delta_yt, zt, wls_params):
 
 
 
-def numerical_opt_b_lambda(x0, residuals, smoothed_prob):
+def numerical_opt_b_lambda(x0, residuals, smoothed_prob,restriction_matrix):
     k_vars = residuals.shape[0]
     regimes = smoothed_prob.shape[0]
-    func = lambda x : sigma_likelihood(x, residuals, smoothed_prob)
-    grad1 = lambda x : fprime(x, residuals, smoothed_prob) # gradient based on Autograd 
-    hess1 = lambda x :  hessian(x,  residuals, smoothed_prob)
+    func = lambda x : sigma_likelihood(x, residuals, smoothed_prob, restriction_matrix)
+    grad1 = lambda x : fprime(x, residuals, smoothed_prob,restriction_matrix) # gradient based on Autograd 
+    hess1 = lambda x :  hessian(x,  residuals, smoothed_prob,restriction_matrix)
     initial_x0 = x0
     method_ = 'trust-krylov' # starting optimization with gradient based optimizer
 
@@ -263,25 +275,32 @@ def numerical_opt_b_lambda(x0, residuals, smoothed_prob):
 
         if message == True:
             break 
-        
-        length_x0 = k_vars*k_vars+(regimes-1)*k_vars
+
+        #TODO Make sure to change these cases to match restrictions as x0 in restricted case is different form 
+        #  K-vars*k_vars 
+
+        length_x0 = len(initial_x0)
+        len_restricted_b = np.sum(restriction_matrix)
+        x2= restriction_matrix.T.reshape(-1,1)
+        mask = (x2 != 0)
         if j==0:
             x0 = np.zeros(length_x0).reshape(-1,1)
-            x0[:(k_vars*k_vars),[0]] =  np.identity(k_vars).reshape(-1,1) #
+
+            x0[:len_restricted_b,[0]] =   np.identity(k_vars).reshape(-1,1)[mask] #
             x0=x0.ravel()
         elif j==1:
             x0 = np.ones(length_x0).reshape(-1,1)*(3)
-            x0[:(k_vars*k_vars),[0]] =  np.identity(k_vars).reshape(-1,1) #
+            x0[:len_restricted_b,[0]] =  np.identity(k_vars).reshape(-1,1)[mask] #
             x0=x0.ravel()         
         elif j==2:
             x0 = np.ones(length_x0).reshape(-1,1)*(-3)
-            x0[:(k_vars*k_vars),[0]] =  np.identity(k_vars).reshape(-1,1) #
+            x0[:len_restricted_b,[0]] =  np.identity(k_vars).reshape(-1,1)[mask] #
             x0=x0.ravel()   
         else:
             x0 = initial_x0 
             method_ = 'COBYLA' # if gradient based method doesn't work try gradient free method
 
-    b, lam_m_list  = reconstitute_b_lambda(result.x, k_vars, regimes)
+    b, lam_m_list  = reconstitute_b_lambda(result.x, k_vars, regimes, restriction_matrix)
     # above lambda is a list convert into a 3d array 
     lam_m = np.zeros([k_vars,k_vars,regimes-1])
     for regime in range(regimes-1):
