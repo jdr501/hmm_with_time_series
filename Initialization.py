@@ -55,11 +55,12 @@ def initialize_step_2(b,regimes, restriction_matrix):
     x2= restriction_matrix.T.reshape(-1,1)
     mask = (x2 != 0)
     x1 = x1[mask]
-    x0[:len(x1),[0]] = x1 
+    x0[:len(x1),0] = x1 
     lam_m = np.zeros([k_vars,k_vars,regimes-1])
 
     for regime in range(regimes-1):
         lam_m[:,:, regime] = np.identity(k_vars)*np.array([np.random.rand() for _ in range(k_vars)])*3 
 
-    sigmas = sigma_estimate(b, lam_m)    
+    sigmas = sigma_estimate(b, lam_m) 
+    print(f'this is x0: \n {x0}')   
     return sigmas , x0

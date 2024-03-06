@@ -12,7 +12,9 @@ from comm_functions import sigma_estimate
 
 def optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,
                      x0,  zt, delta_yt, regimes, restriction_matrix):
-    
+    """
+    restriction matrix maps the  x0 to B matrix. 
+    """
     transition_prob, start_prob = estimate_transition_prob(smoothed_prob, joint_smoothed_prob, regimes)
     wls_params = wls_estimate(sigmas, zt, delta_yt, smoothed_prob)
     residuals = residuals_estimate(delta_yt, zt, wls_params)
@@ -165,7 +167,6 @@ def sigma_likelihood(x, residuals, smoothed_prob, restriction_matrix):
         term_3 += np.sum(smoothed_prob[regime+1, :]) * np.log(np.linalg.det(lam_m[regime ])) / 2
         term_4 += np.trace(b_matrix_trans_inv @ lam_inv @ b_matrix_inv @ weighted_sum_res[:, :, regime+1]) / 2
     negative_likelihood = term_1 + term_2 + term_3 + term_4
-
     return negative_likelihood  
 
 
@@ -198,7 +199,7 @@ def reconstitute_b_lambda(x, k_vars, regimes, restriction_matrix):
 
 
 def fprime(x, residuals, smoothed_prob,restriction_matrix):
-    func = lambda x : sigma_likelihood(x, residuals, smoothed_pro,restriction_matrix)
+    func = lambda x : sigma_likelihood(x, residuals, smoothed_prob,restriction_matrix)
     g= egrad(func)
     return g(x)
 
@@ -241,6 +242,8 @@ def residuals_estimate(delta_yt, zt, wls_params):
 
 
 def numerical_opt_b_lambda(x0, residuals, smoothed_prob,restriction_matrix):
+    if x0.ndim>1:
+        x0 = x0.ravel() 
     k_vars = residuals.shape[0]
     regimes = smoothed_prob.shape[0]
     func = lambda x : sigma_likelihood(x, residuals, smoothed_prob, restriction_matrix)
@@ -257,7 +260,7 @@ def numerical_opt_b_lambda(x0, residuals, smoothed_prob,restriction_matrix):
                                 tol= 1e-6, 
                                 jac=grad1,hess=hess1,
                                 options={'maxiter': 30000})
-            
+            print(f'this is result \n : {result}')
             x0 = result.x
             if j< 3:     
                 num_grad = result.jac
@@ -269,15 +272,13 @@ def numerical_opt_b_lambda(x0, residuals, smoothed_prob,restriction_matrix):
                     num_grad = np.array([1,1]) 
             message = result.success   
             print(result)
-        except:
-            print('optimization resulted in an error')
+        except Exception as e:
+            # Handle the exception and print the error message
+            print("An error occurred:", str(e))
             message = False 
 
         if message == True:
             break 
-
-        #TODO Make sure to change these cases to match restrictions as x0 in restricted case is different form 
-        #  K-vars*k_vars 
 
         length_x0 = len(initial_x0)
         len_restricted_b = np.sum(restriction_matrix)
@@ -286,15 +287,15 @@ def numerical_opt_b_lambda(x0, residuals, smoothed_prob,restriction_matrix):
         if j==0:
             x0 = np.zeros(length_x0).reshape(-1,1)
 
-            x0[:len_restricted_b,[0]] =   np.identity(k_vars).reshape(-1,1)[mask] #
+            x0[:len_restricted_b,0] =   np.identity(k_vars).reshape(-1,1)[mask] #
             x0=x0.ravel()
         elif j==1:
             x0 = np.ones(length_x0).reshape(-1,1)*(3)
-            x0[:len_restricted_b,[0]] =  np.identity(k_vars).reshape(-1,1)[mask] #
+            x0[:len_restricted_b,0] =  np.identity(k_vars).reshape(-1,1)[mask] #
             x0=x0.ravel()         
         elif j==2:
             x0 = np.ones(length_x0).reshape(-1,1)*(-3)
-            x0[:len_restricted_b,[0]] =  np.identity(k_vars).reshape(-1,1)[mask] #
+            x0[:len_restricted_b,0] =  np.identity(k_vars).reshape(-1,1)[mask] #
             x0=x0.ravel()   
         else:
             x0 = initial_x0 

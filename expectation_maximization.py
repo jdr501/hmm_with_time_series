@@ -64,10 +64,10 @@ def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delt
 
 
 def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None, restriction_matrix=None):
-    if restriction_matrix == None:
+    if restriction_matrix.any() == None:
         k_vars_ = len(df.columns)
         restriction_matrix = np.ones([k_vars_,k_vars_])
-
+    print(f'this is restriction amtrix: \n restriction_matrix')
     b, start_prob, \
     transition_prob, \
     delta_yt, zt,\
@@ -100,7 +100,7 @@ def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None, restriction
 
 def parallel_run(b, residuals, start_prob,
                   transition_prob, beta,  zt, 
-                  delta_yt, regimes,runs):  
+                  delta_yt, regimes,runs,restriction_matrix):  
     sigmas_list = []
     result_dic = {}
     d = 0
