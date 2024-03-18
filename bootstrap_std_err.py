@@ -6,6 +6,7 @@ from autograd import elementwise_grad as egrad
 from autograd import jacobian
 import autograd.numpy as np
 from comm_functions import sigma_estimate, draw_from_Rademacher, convert_wlsparam, svar_ma_rep
+from comm_functions import bound_gen
 from expectation import expectation_run
 from scipy.stats import norm
 
@@ -110,15 +111,19 @@ def numerical_opt_b_lambda(x0, residuals, smoothed_prob, lam_m):
     grad1 = lambda x : fprime(x, residuals, smoothed_prob, lam_m) # gradient based on Autograd 
     hess1 = lambda x :  hessian(x,  residuals, smoothed_prob, lam_m)
     initial_x0 = x0
-    method_ = 'trust-krylov' # starting optimization with gradient based optimizer
-
+    method_ = 'trust-constr' # starting optimization with gradient based optimizer
+    res_mat = np.array([
+    [1,1,1],
+    [1,1,1],
+    [1,1,1],])
+    bound_restriction = bound_gen(res_mat,x0)
     for  j  in range(5): 
         #print(f'\n this is the current optimization method: \n {method_}')
         try:
             result = minimize(func, x0, 
                                 method = method_, 
                                 tol= 1e-6, 
-                                jac=grad1,hess=hess1,
+                                jac=grad1,hess=hess1, bounds = bound_restriction,
                                 options={'maxiter': 30000})
             
             x0 = result.x

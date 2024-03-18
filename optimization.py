@@ -6,15 +6,12 @@ from autograd import elementwise_grad as egrad
 from autograd import jacobian
 import autograd.numpy as np
 
-from comm_functions import sigma_estimate
-
-
+from comm_functions import sigma_estimate 
+from comm_functions import bound_gen
 
 def optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,
-                     x0,  zt, delta_yt, regimes, restriction_matrix):
-    """
-    restriction matrix maps the  x0 to B matrix. 
-    """
+                     x0,  zt, delta_yt, regimes):
+    
     transition_prob, start_prob = estimate_transition_prob(smoothed_prob, joint_smoothed_prob, regimes)
     wls_params = wls_estimate(sigmas, zt, delta_yt, smoothed_prob)
     residuals = residuals_estimate(delta_yt, zt, wls_params)
@@ -22,7 +19,7 @@ def optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,
         b_matrix, \
         lam_m, \
         sigmas, \
-            num_grad = numerical_opt_b_lambda(x0, residuals, smoothed_prob, restriction_matrix)
+            num_grad = numerical_opt_b_lambda(x0, residuals, smoothed_prob)
     
     return transition_prob, start_prob, x0, b_matrix, lam_m, sigmas, wls_params, num_grad, residuals
 
@@ -128,7 +125,7 @@ def initial_probabilities(regime_transition):
     return probabilities
 
 
-def sigma_likelihood(x, residuals, smoothed_prob, restriction_matrix):
+def sigma_likelihood(x, residuals, smoothed_prob):
     """
     :param x: must be a column vector of guesses
     :param residuals:
@@ -138,7 +135,7 @@ def sigma_likelihood(x, residuals, smoothed_prob, restriction_matrix):
 
     k_vars, obs = residuals.shape
     regimes = smoothed_prob.shape[0]
-    b_matrix, lam_m = reconstitute_b_lambda(x, k_vars, regimes,restriction_matrix)
+    b_matrix, lam_m = reconstitute_b_lambda(x, k_vars, regimes)
     weighted_sum_res = np.zeros([k_vars, k_vars, regimes])
     for regime in range(regimes):
         temp_wt_sum = 0
@@ -167,45 +164,36 @@ def sigma_likelihood(x, residuals, smoothed_prob, restriction_matrix):
         term_3 += np.sum(smoothed_prob[regime+1, :]) * np.log(np.linalg.det(lam_m[regime ])) / 2
         term_4 += np.trace(b_matrix_trans_inv @ lam_inv @ b_matrix_inv @ weighted_sum_res[:, :, regime+1]) / 2
     negative_likelihood = term_1 + term_2 + term_3 + term_4
+
     return negative_likelihood  
 
 
-def reconstitute_b_lambda(x, k_vars, regimes, restriction_matrix):
+def reconstitute_b_lambda(x, k_vars, regimes):
     x = x.reshape(-1, 1)
     lam_m = [] 
-    b_array = x[:np.sum(restriction_matrix), [0]]
-
-    b_matrix = np.zeros([k_vars, k_vars])
-    index = 0 
-    for j in range(k_vars):
-        for i in range(k_vars):
-            if restriction_matrix[i,j] == 1:
-                b_matrix[i,j] = b_array[index,0]
-                index += 1 
-            else:
-                b_matrix[i,j] = 0 
+    b_matrix = x[:k_vars * k_vars, [0]].reshape(k_vars, k_vars).T
     identity_mat = np.eye(k_vars)
     for regime in range(regimes - 1):
         if regime == 0:
-            start = np.sum(restriction_matrix)
+            start = k_vars * k_vars
             end = start + k_vars
         else:
             start = end
             end = start + k_vars
         lam_m.append(identity_mat * np.exp(x[start:end, [0]]))
-        
+
     return b_matrix, lam_m
 
 
 
-def fprime(x, residuals, smoothed_prob,restriction_matrix):
-    func = lambda x : sigma_likelihood(x, residuals, smoothed_prob,restriction_matrix)
+def fprime(x, residuals, smoothed_prob):
+    func = lambda x : sigma_likelihood(x, residuals, smoothed_prob)
     g= egrad(func)
     return g(x)
 
 
-def hessian(x,  residuals, smoothed_prob,restriction_matrix):
-  func = lambda x : sigma_likelihood(x, residuals, smoothed_prob,restriction_matrix)
+def hessian(x,  residuals, smoothed_prob):
+  func = lambda x : sigma_likelihood(x, residuals, smoothed_prob)
   H_f = jacobian(egrad(func))
   return H_f(x)
 
@@ -241,73 +229,78 @@ def residuals_estimate(delta_yt, zt, wls_params):
 
 
 
-def numerical_opt_b_lambda(x0, residuals, smoothed_prob,restriction_matrix):
-    if x0.ndim>1:
-        x0 = x0.ravel() 
+def numerical_opt_b_lambda(x0, residuals, smoothed_prob):
     k_vars = residuals.shape[0]
     regimes = smoothed_prob.shape[0]
-    func = lambda x : sigma_likelihood(x, residuals, smoothed_prob, restriction_matrix)
-    grad1 = lambda x : fprime(x, residuals, smoothed_prob,restriction_matrix) # gradient based on Autograd 
-    hess1 = lambda x :  hessian(x,  residuals, smoothed_prob,restriction_matrix)
+    func = lambda x : sigma_likelihood(x, residuals, smoothed_prob)
+    grad1 = lambda x : fprime(x, residuals, smoothed_prob) # gradient based on Autograd 
+    hess1 = lambda x :  hessian(x,  residuals, smoothed_prob)
     initial_x0 = x0
-    method_ = 'trust-krylov' # starting optimization with gradient based optimizer
-
+    method_ = 'trust-constr' # starting optimization with gradient based optimizer
+    res_mat = np.array([
+    [1,1,1],
+    [1,1,1],
+    [1,1,1],])
+    bound_restriction = bound_gen(res_mat,x0)
     for  j  in range(5): 
         print(f'\n this is the current optimization method: \n {method_}')
         try:
             result = minimize(func, x0, 
                                 method = method_, 
                                 tol= 1e-6, 
-                                jac=grad1,hess=hess1,
+                                jac=grad1,hess=hess1, bounds = bound_restriction,
                                 options={'maxiter': 30000})
-            print(f'this is result \n : {result}')
+            
             x0 = result.x
-            if j< 3:     
-                num_grad = result.jac
+            if j< 3:   
+
+                if method_ == 'trust-constr':
+                    num_grad = np.array([1,1]) 
+                else:
+                    num_grad = result.jac
+
             else: 
                 try:
-                    num_grad = grad1(x0)
+                    if method_ == 'trust-constr':
+                        num_grad = np.array([1,1]) 
+                    else:
+                        num_grad = grad1(x0)
                 except: 
                     print('autograd could not find the gradient')
                     num_grad = np.array([1,1]) 
             message = result.success   
             print(result)
-        except Exception as e:
-            # Handle the exception and print the error message
-            print("An error occurred:", str(e))
+        except:
+            print('optimization resulted in an error')
             message = False 
 
         if message == True:
             break 
-
-        length_x0 = len(initial_x0)
-        len_restricted_b = np.sum(restriction_matrix)
-        x2= restriction_matrix.T.reshape(-1,1)
-        mask = (x2 != 0)
+        
+        length_x0 = k_vars*k_vars+(regimes-1)*k_vars
         if j==0:
             x0 = np.zeros(length_x0).reshape(-1,1)
-
-            x0[:len_restricted_b,0] =   np.identity(k_vars).reshape(-1,1)[mask] #
+            x0[:(k_vars*k_vars),[0]] =  np.identity(k_vars).reshape(-1,1) #
             x0=x0.ravel()
         elif j==1:
             x0 = np.ones(length_x0).reshape(-1,1)*(3)
-            x0[:len_restricted_b,0] =  np.identity(k_vars).reshape(-1,1)[mask] #
+            x0[:(k_vars*k_vars),[0]] =  np.identity(k_vars).reshape(-1,1) #
             x0=x0.ravel()         
         elif j==2:
             x0 = np.ones(length_x0).reshape(-1,1)*(-3)
-            x0[:len_restricted_b,0] =  np.identity(k_vars).reshape(-1,1)[mask] #
+            x0[:(k_vars*k_vars),[0]] =  np.identity(k_vars).reshape(-1,1) #
             x0=x0.ravel()   
         else:
             x0 = initial_x0 
             method_ = 'COBYLA' # if gradient based method doesn't work try gradient free method
 
-    b, lam_m_list  = reconstitute_b_lambda(result.x, k_vars, regimes, restriction_matrix)
+    b, lam_m_list  = reconstitute_b_lambda(result.x, k_vars, regimes)
     # above lambda is a list convert into a 3d array 
     lam_m = np.zeros([k_vars,k_vars,regimes-1])
     for regime in range(regimes-1):
         lam_m[:,:,regime] = lam_m_list[regime]
 
     sigmas = sigma_estimate(b, lam_m)
-
+    
     return result.x, b, lam_m, sigmas, num_grad
 

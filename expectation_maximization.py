@@ -12,11 +12,11 @@ import random
 
 
 
-def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delta_yt,x0, restriction_matrix):
+def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delta_yt,x0):
     regimes = start_prob.shape[0]
     llf = []
-    for i in range(100): 
-        if i>1 and  abs(llf[-1] - llf[-2])/ abs(llf[-2]) < 1e-6  and parameter_converged:
+    for i in range(1000): 
+        if i>1 and  abs(llf[-1] - llf[-2])/ abs(llf[-2])< 1e-6  and parameter_converged: # / abs(llf[-2])
             print('em converged')
             break         
         loglikelihood, \
@@ -30,7 +30,7 @@ def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delt
         b_matrix, \
         lam_m, sigmas,\
         wls_params, num_grad, \
-        residuals = optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,x0,  zt, delta_yt,regimes,restriction_matrix)
+        residuals = optimization_run(smoothed_prob, joint_smoothed_prob,sigmas,x0,  zt, delta_yt,regimes)
         
 
         print(f'this is new log likelihood {loglikelihood}')
@@ -43,6 +43,8 @@ def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delt
         if i >0:
             parameter_converged = check_parameter_converge(previous_param_convergence_dict, param_convergence_dict, 1e-6)
         previous_param_convergence_dict = param_convergence_dict
+    
+    print(f'================================ \n it took {i} runs to converge \n ================================')
 
 
     em_result = {'likelihood': loglikelihood.tolist(),
@@ -63,11 +65,7 @@ def em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delt
 
 
 
-def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None, restriction_matrix=None):
-    if restriction_matrix.any() == None:
-        k_vars_ = len(df.columns)
-        restriction_matrix = np.ones([k_vars_,k_vars_])
-    print(f'this is restriction amtrix: \n restriction_matrix')
+def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None):
     b, start_prob, \
     transition_prob, \
     delta_yt, zt,\
@@ -82,8 +80,8 @@ def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None, restriction
     else:
         result_dic = {}
         for i in range(runs):
-            sigmas, x0 = initialize_step_2(b,regimes, restriction_matrix)
-            em_result = em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delta_yt,x0,restriction_matrix)
+            sigmas, x0 = initialize_step_2(b,regimes)
+            em_result = em_algorithm(sigmas, residuals, start_prob, transition_prob, beta,  zt, delta_yt,x0)
             result_dic.update({f'{i}': em_result})
     runs_llf = np.zeros(runs)
 
@@ -100,15 +98,15 @@ def em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None, restriction
 
 def parallel_run(b, residuals, start_prob,
                   transition_prob, beta,  zt, 
-                  delta_yt, regimes,runs,restriction_matrix):  
+                  delta_yt, regimes,runs):  
     sigmas_list = []
     result_dic = {}
     d = 0
     for _ in range(runs):
-        sigmas = initialize_step_2(b,regimes,restriction_matrix)
+        sigmas = initialize_step_2(b,regimes)
         sigmas_list.append(sigmas)
    
-    partial_em = partial(em_algorithm, residuals, start_prob, transition_prob, beta,  zt, delta_yt,restriction_matrix)
+    partial_em = partial(em_algorithm, residuals, start_prob, transition_prob, beta,  zt, delta_yt)
 
     if __name__ == "em_parallel":
         ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=1))

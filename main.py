@@ -12,7 +12,7 @@ df.set_index('date', inplace =True)
 df['BTC_price'] = (df['BTC_price']/100 )  
 df['USDT_price'] =  (df['USDT_price']*100) 
 df['USDT_supply'] = (df['USDT_supply']/100000000) 
-df =df[df.index > '2018-04-01'] # 2019 april is the migration date to etherium 
+df =df[df.index > '2019-01-01']
 #df =df[df.index < '2022-01-01']
 df2 = pd.DataFrame()
 for column in df.columns:
@@ -24,35 +24,30 @@ df = df2 #
 
 
 k_vars = 3
-regimes = 3
-lags = 3
+regimes = 2
+lags = 3 # TODO changed the lag order from 3 - > 7 
 runs = 1
 
-res_mat = np.array([
-    [1,1,1],
-    [1,1,1],
-    [1,1,1],
-])
-
-
 # estimation of parameters 
-result_dict = em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None, restriction_matrix = res_mat )
-file_name =  '/globalhome/jdr501/HPC/estimated_results/results_3_regime_parallel_1.json'
+result_dict = em_run(df,lags,regimes, runs, parrelel_run = False,  exog= None)
+file_name =  '/globalhome/jdr501/HPC/estimated_results/results_before.json'
 with open(file_name, 'w') as fp:
     json.dump(result_dict, fp)
 
 B_mat = np.array(result_dict['b_matrix'])
+print(f'this is b matrix: \n {B_mat}')
 wls_params = np.array(result_dict['wls_params'])
 beta = np.array(result_dict['beta']).reshape(-1,1)
 alpha, gamma = convert_wlsparam(wls_params, k_vars)
 neqs = k_vars
 k_ar = lags +1
-steps = 40
+steps = 30
 phi = svar_ma_rep(B_mat, beta, alpha, gamma, neqs, k_ar, maxn= steps)
 
 print('standard errors step')
-stderr = bootstrap_run( result_dict,lags,k_vars, steps+1, draws=1000)
+stderr = bootstrap_run( result_dict,lags,k_vars, steps+1, draws=500)
 
 plot = irf_plot(phi, stderr, names = ['USDT_price',	'USDT_supply',	'BTC_price'])
-plot.savefig('irf_plot.pdf', dpi=300)
+plot.savefig('irf_plot_2_unrestricted.pdf', dpi=300)
 
+print('Finished the process')

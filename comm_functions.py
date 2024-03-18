@@ -100,3 +100,13 @@ def svar_ma_rep(B, beta, alpha, gamma, neqs, k_ar, maxn=10):
   coefs = var_rep(beta, alpha, gamma, neqs, k_ar)
   ma_mats = ma_rep(coefs, maxn)
   return np.array([np.dot(coefs, P) for coefs in ma_mats])
+
+def bound_gen(res_mat,x0):
+  restriction_array = res_mat.T.flatten().reshape(-1,1)
+  bounds = [(-np.Inf, np.inf)] * len(x0)
+  for i in range(len(restriction_array)):
+    if restriction_array[i] ==0:
+      bounds[i] = (0, 0)
+    else:
+      pass 
+  return bounds
